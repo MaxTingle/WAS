@@ -20,13 +20,21 @@ namespace WorkingAttenuationSoftware
                 Visible = true,
                 Icon = WorkingAttenuationSoftware.Properties.Resources.TrayIcon
             };
+            //TODO: Add ui:
+            //TODO: Add mic selection
+            //TODO: Add whitelist program selection
+            //TODO: Add voip program selection
+            //TODO: Add minimum noise length (seconds) input
+            //TODO: Add minimum mic volume input
+            //TODO: Add restore volume after input
             trayIcon.Click += this._TrayIconClicked;
             #endregion
 
             #region Initialize service
-            AudioReducer reducer = new AudioReducer(10.0f);
-            reducer.StoreCurrentVolumeLevels();
-            //TODO: Create & start service/loop/whatever to listen for mic/app sound
+            AudioReducer reducer = new AudioReducer(0.4, 0.3, 8, 3);
+            reducer.AddVOIPApp("discord.exe");
+            reducer.ListenForIncomingVOIP();
+            reducer.ListenForMic();
             #endregion
         }
 
