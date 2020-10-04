@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace WorkingAttenuationSoftware.Controls
@@ -14,9 +15,11 @@ namespace WorkingAttenuationSoftware.Controls
     {
         public static float? GetApplicationVolume(int pid)
         {
-            ISimpleAudioVolume volume = GetVolumeObject(pid);
+            ISimpleAudioVolume volume = VolumeMixer.GetCoreAudioObject<ISimpleAudioVolume>(pid);
             if (volume == null)
+            {
                 return null;
+            }
 
             float level;
             volume.GetMasterVolume(out level);
@@ -26,9 +29,11 @@ namespace WorkingAttenuationSoftware.Controls
 
         public static bool? GetApplicationMute(int pid)
         {
-            ISimpleAudioVolume volume = GetVolumeObject(pid);
+            ISimpleAudioVolume volume = VolumeMixer.GetCoreAudioObject<ISimpleAudioVolume>(pid);
             if (volume == null)
+            {
                 return null;
+            }
 
             bool mute;
             volume.GetMute(out mute);
@@ -38,9 +43,11 @@ namespace WorkingAttenuationSoftware.Controls
 
         public static void SetApplicationVolume(int pid, float level)
         {
-            ISimpleAudioVolume volume = GetVolumeObject(pid);
+            ISimpleAudioVolume volume = VolumeMixer.GetCoreAudioObject<ISimpleAudioVolume>(pid);
             if (volume == null)
+            {
                 return;
+            }
 
             Guid guid = Guid.Empty;
             volume.SetMasterVolume(level / 100, ref guid);
@@ -49,37 +56,68 @@ namespace WorkingAttenuationSoftware.Controls
 
         public static void SetApplicationMute(int pid, bool mute)
         {
-            ISimpleAudioVolume volume = GetVolumeObject(pid);
+            ISimpleAudioVolume volume = VolumeMixer.GetCoreAudioObject<ISimpleAudioVolume>(pid);
             if (volume == null)
+            {
                 return;
+            }
 
             Guid guid = Guid.Empty;
             volume.SetMute(mute, ref guid);
             Marshal.ReleaseComObject(volume);
         }
 
-        private static ISimpleAudioVolume GetVolumeObject(int pid)
+        public static float? GetApplicationPeak(int pid)
+        {
+            IAudioMeterInformation meter = VolumeMixer.GetCoreAudioObject<IAudioMeterInformation>(pid);
+            if (meter == null)
+            {
+                return null;
+            }
+
+            float peak;
+            meter.GetPeakValue(out peak);
+            return peak;
+        }
+
+        private static IMMDevice GetOutputDevice()
         {
             // get the speakers (1st render + multimedia) device
             IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
             IMMDevice speakers;
             deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out speakers);
 
-            // activate the session manager. we need the enumerator
+            Marshal.ReleaseComObject(deviceEnumerator);
+
+            return speakers;
+        }
+
+        private static IAudioSessionManager2 GetOutputDeviceSessionManager(IMMDevice outputDevice)
+        {
             Guid IID_IAudioSessionManager2 = typeof(IAudioSessionManager2).GUID;
             object o;
-            speakers.Activate(ref IID_IAudioSessionManager2, 0, IntPtr.Zero, out o);
-            IAudioSessionManager2 mgr = (IAudioSessionManager2)o;
+            outputDevice.Activate(ref IID_IAudioSessionManager2, 0, IntPtr.Zero, out o);
+            return (IAudioSessionManager2)o;
+        }
 
-            // enumerate sessions for on this device
+        private static IAudioSessionEnumerator GetOutputDeviceSessionEnumerator(IAudioSessionManager2 manager)
+        {
             IAudioSessionEnumerator sessionEnumerator;
-            mgr.GetSessionEnumerator(out sessionEnumerator);
+            manager.GetSessionEnumerator(out sessionEnumerator);
+
+            return sessionEnumerator;
+        }
+
+        private static T GetCoreAudioObject<T>(int pid)
+        {
+            IMMDevice speakers = VolumeMixer.GetOutputDevice();
+            IAudioSessionManager2 mgr = VolumeMixer.GetOutputDeviceSessionManager(speakers);
+
+            IAudioSessionEnumerator sessionEnumerator = VolumeMixer.GetOutputDeviceSessionEnumerator(mgr);
             int count;
             sessionEnumerator.GetCount(out count);
 
-            // search for an audio session with the required name
-            // NOTE: we could also use the process id instead of the app name (with IAudioSessionControl2)
-            ISimpleAudioVolume volumeControl = null;
+            dynamic volumeControl = null;
             for (int i = 0; i < count; i++)
             {
                 IAudioSessionControl2 ctl;
@@ -89,21 +127,21 @@ namespace WorkingAttenuationSoftware.Controls
 
                 if (cpid == pid)
                 {
-                    volumeControl = ctl as ISimpleAudioVolume;
+                    volumeControl = (T)ctl;
                     break;
                 }
+
                 Marshal.ReleaseComObject(ctl);
             }
+
             Marshal.ReleaseComObject(sessionEnumerator);
             Marshal.ReleaseComObject(mgr);
             Marshal.ReleaseComObject(speakers);
-            Marshal.ReleaseComObject(deviceEnumerator);
             return volumeControl;
         }
     }
 
-    [ComImport]
-    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), ComImport]
     internal class MMDeviceEnumerator
     {
     }
@@ -124,7 +162,7 @@ namespace WorkingAttenuationSoftware.Controls
         ERole_enum_count
     }
 
-    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface IMMDeviceEnumerator
     {
         int NotImpl1();
@@ -135,7 +173,7 @@ namespace WorkingAttenuationSoftware.Controls
         // the rest is not implemented
     }
 
-    [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface IMMDevice
     {
         [PreserveSig]
@@ -144,7 +182,7 @@ namespace WorkingAttenuationSoftware.Controls
         // the rest is not implemented
     }
 
-    [Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface IAudioSessionManager2
     {
         int NotImpl1();
@@ -156,7 +194,14 @@ namespace WorkingAttenuationSoftware.Controls
         // the rest is not implemented
     }
 
-    [Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("c02216f6-8c67-4b5b-9d00-d008e73e0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
+    internal interface IAudioMeterInformation
+    {
+        [PreserveSig]
+        public int GetPeakValue(out float peak);
+    }
+
+    [Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface IAudioSessionEnumerator
     {
         [PreserveSig]
@@ -166,7 +211,7 @@ namespace WorkingAttenuationSoftware.Controls
         int GetSession(int SessionCount, out IAudioSessionControl2 Session);
     }
 
-    [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface ISimpleAudioVolume
     {
         [PreserveSig]
@@ -182,7 +227,7 @@ namespace WorkingAttenuationSoftware.Controls
         int GetMute(out bool pbMute);
     }
 
-    [Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
     internal interface IAudioSessionControl2
     {
         // IAudioSessionControl

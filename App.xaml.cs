@@ -26,13 +26,19 @@ namespace WorkingAttenuationSoftware
             //TODO: Add voip program selection
             //TODO: Add minimum noise length (seconds) input
             //TODO: Add minimum mic volume input
+            //TODO: Add minimum app volume input
             //TODO: Add restore volume after input
             trayIcon.Click += this._TrayIconClicked;
             #endregion
 
             #region Initialize service
-            AudioReducer reducer = new AudioReducer(0.4, 0.3, 8, 3);
+            AudioReducer reducer = new AudioReducer(0.4);
+            reducer.SetMinimumNoiseLength(0.3);
+            reducer.SetMinimumMicVolume(0.08);
+            reducer.SetRestoreVolumeAfter(3);
+            reducer.SetMinimumAppVolume(0.2);
             reducer.AddVOIPApp("discord.exe");
+            reducer.AddVOIPApp("chrome.exe");
             reducer.ListenForIncomingVOIP();
             reducer.ListenForMic();
             #endregion
